@@ -421,6 +421,7 @@ module Net
           s = [data].pack("m").gsub(/\n/, "")
           send_string_data(s)
           put_string(CRLF)
+          flush
         end
       end
     end
@@ -915,6 +916,7 @@ module Net
       synchronize do
         tag = Thread.current[:net_imap_tag] = generate_tag
         put_string("#{tag} IDLE#{CRLF}")
+        flush
 
         begin
           add_response_handler(response_handler)
@@ -928,6 +930,8 @@ module Net
           unless @receiver_thread_terminating
             remove_response_handler(response_handler)
             put_string("DONE#{CRLF}")
+            flush
+
             response = get_tagged_response(tag, "IDLE")
           end
         end
@@ -1058,6 +1062,7 @@ module Net
       @logout_command_tag = nil
       @debug_output_bol = true
       @exception = nil
+      @wbuffer = []
 
       @greeting = get_response
       if @greeting.nil?
@@ -1200,6 +1205,8 @@ module Net
           send_data(i)
         end
         put_string(CRLF)
+        flush
+
         if cmd == "LOGOUT"
           @logout_command_tag = tag
         end
@@ -1222,6 +1229,13 @@ module Net
     end
 
     def put_string(str)
+      @wbuffer << str
+    end
+
+    def flush
+      str = @wbuffer.join("")
+      @wbuffer.clear
+
       @sock.print(str)
       if @@debug
         if @debug_output_bol
@@ -1295,9 +1309,11 @@ module Net
 
     def send_literal(str)
       put_string("{" + str.bytesize.to_s + "}" + CRLF)
+      flush
       @continuation_request_arrival.wait
       raise @exception if @exception
       put_string(str)
+      flush
     end
 
     def send_number_data(num)
